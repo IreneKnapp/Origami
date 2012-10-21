@@ -1,19 +1,26 @@
 module Main (main) where
 
-import Data.Array
+import Control.Concurrent
+import qualified Data.Array as A
 import Data.StateVar
 import qualified Graphics.UI.GLFW as GLFW
 import qualified Graphics.Rendering.OpenGL as GL
 import System.Exit
 
 
-data Point = Point Double Double Double
+data ProgramState =
+  ProgramState {
+      programStatePolygonModel :: MVar PolygonModel
+    }
+
+
+data Point = Point GL.GLdouble GL.GLdouble GL.GLdouble
 
 
 data PolygonModel =
   PolygonModel {
-      polygonModelPoints :: Array Int Point,
-      polygonModelFaces :: Array Int [Int]
+      polygonModelPoints :: A.Array Int Point,
+      polygonModelFaces :: A.Array Int [Int]
     }
 
 
@@ -21,24 +28,23 @@ flatSquarePolygonModel :: PolygonModel
 flatSquarePolygonModel =
   PolygonModel {
       polygonModelPoints =
-        array (0, 3)
-              [(0, Point (-0.5) ( 0.5) ( 0.0)),
-               (1, Point ( 0.5) ( 0.5) ( 0.0)),
-               (2, Point ( 0.5) (-0.5) ( 0.0)),
-               (3, Point (-0.5) (-0.5) ( 0.0))],
+        A.array (0, 3)
+                [(0, Point (-0.5) (-0.5) ( 0.0)),
+                 (1, Point ( 0.5) (-0.5) ( 0.0)),
+                 (2, Point ( 0.5) ( 0.5) ( 0.0)),
+                 (3, Point (-0.5) ( 0.5) ( 0.0))],
       polygonModelFaces =
-        array (0, 0)
-              [(0, [0, 1, 2, 3])]
+        A.array (0, 0)
+                [(0, [0, 1, 2, 3])]
     }
-
-
-data ProgramState
-  = ProgramStateRunning { }
-  | ProgramStateDone
 
 
 main :: IO ()
 main = do
+  polygonModelMVar <- newMVar flatSquarePolygonModel
+  let state = ProgramState {
+                  programStatePolygonModel = polygonModelMVar
+                }
   GLFW.initialize
   GLFW.openWindow (GL.Size 480 480)
                   [GLFW.DisplayRGBBits 8 8 8,
@@ -47,10 +53,61 @@ main = do
                    GLFW.DisplayStencilBits 0]
                   GLFW.Window
   GLFW.windowTitle $= "Origami"
+  setupGraphics
+  GLFW.disableSpecial GLFW.AutoPollEvent
   GLFW.keyCallback $= \key buttonState -> do
     GLFW.terminate
     exitSuccess
+  GLFW.windowRefreshCallback $= redraw state
+  redraw state
   let loop = do
         GLFW.waitEvents
         loop
   loop
+
+
+setupGraphics :: IO ()
+setupGraphics = do
+  GL.matrixMode $= GL.Projection
+  GL.loadIdentity
+  GL.perspective 175.0 1.0 (-1.0) 1.0
+  GL.matrixMode $= GL.Modelview 0
+  GL.loadIdentity
+  GL.frontFace $= GL.CW
+  projectionMatrix <- get $ GL.matrix (Just GL.Projection)
+    :: IO (GL.GLmatrix GL.GLdouble)
+  modelMatrix <- get $ GL.matrix (Just $ GL.Modelview 0)
+    :: IO (GL.GLmatrix GL.GLdouble)
+  viewport <- get GL.viewport
+  putStrLn $ "Viewport " ++ (show viewport)
+  center <- GL.project (GL.Vertex3 0.0 0.0 0.0)
+                       modelMatrix projectionMatrix viewport
+  corner <- GL.project (GL.Vertex3 (-0.5) (-0.5) 0.0)
+                       modelMatrix projectionMatrix viewport
+  putStrLn $ (show center) ++ " " ++ (show corner)
+  GL.depthFunc $= Just GL.Less
+  GL.clearDepth $= 1.0
+  GL.clearColor $= GL.Color4 1.0 1.0 1.0 0.0
+  GL.shadeModel $= GL.Smooth
+
+
+redraw :: ProgramState -> IO ()
+redraw state = do
+  GL.clear [GL.ColorBuffer, GL.DepthBuffer]
+  model <- readMVar $ programStatePolygonModel state
+  drawPolygonModel model
+
+
+drawPolygonModel :: PolygonModel -> IO ()
+drawPolygonModel model = do
+  GL.polygonMode $= (GL.Fill, GL.Fill)
+  GL.color $ (GL.Color3 1.0 0.9 0.9 :: GL.Color3 GL.GLdouble)
+  let loop [] = return ()
+      loop (face : rest) = do
+        let points = map (\index -> polygonModelPoints model A.! index) face
+        GL.renderPrimitive GL.Polygon $ do
+          mapM (\(Point x y z) -> GL.vertex $ GL.Vertex3 x y z) points
+        loop rest
+  loop $ A.elems $ polygonModelFaces model
+  GL.flush
+  GLFW.swapBuffers
