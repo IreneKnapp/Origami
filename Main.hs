@@ -28,14 +28,19 @@ flatSquarePolygonModel :: PolygonModel
 flatSquarePolygonModel =
   PolygonModel {
       polygonModelPoints =
-        A.array (0, 3)
-                [(0, Point (-0.5) (-0.5) ( 0.0)),
-                 (1, Point ( 0.5) (-0.5) ( 0.0)),
-                 (2, Point ( 0.5) ( 0.5) ( 0.0)),
-                 (3, Point (-0.5) ( 0.5) ( 0.0))],
+        A.array (0, 7)
+                [(0, Point ( 0.00) ( 0.50) ( 0.00)),
+                 (1, Point ( 0.01) ( 0.50) ( 0.01)),
+                 (2, Point (-0.50) (-0.01) ( 0.01)),
+                 (3, Point (-0.50) ( 0.00) ( 0.00)),
+                 (4, Point ( 0.50) ( 0.50) ( 0.01)),
+                 (5, Point ( 0.50) (-0.50) ( 0.01)),
+                 (6, Point (-0.50) (-0.50) ( 0.01)),
+                 (7, Point (-0.50) ( 0.00) ( 0.01))],
       polygonModelFaces =
-        A.array (0, 0)
-                [(0, [0, 1, 2, 3])]
+        A.array (0, 1)
+                [(0, [0, 1, 2, 3]),
+                 (1, [1, 4, 5, 6, 7, 2])]
     }
 
 
@@ -101,10 +106,15 @@ redraw state = do
 drawPolygonModel :: PolygonModel -> IO ()
 drawPolygonModel model = do
   GL.polygonMode $= (GL.Fill, GL.Fill)
-  GL.color $ (GL.Color3 1.0 0.9 0.9 :: GL.Color3 GL.GLdouble)
   let loop [] = return ()
       loop (face : rest) = do
         let points = map (\index -> polygonModelPoints model A.! index) face
+        GL.cullFace $= Just GL.Back
+        GL.color $ (GL.Color3 1.0 0.9 0.9 :: GL.Color3 GL.GLdouble)
+        GL.renderPrimitive GL.Polygon $ do
+          mapM (\(Point x y z) -> GL.vertex $ GL.Vertex3 x y z) points
+        GL.cullFace $= Just GL.Front
+        GL.color $ (GL.Color3 1.0 0.95 0.95 :: GL.Color3 GL.GLdouble)
         GL.renderPrimitive GL.Polygon $ do
           mapM (\(Point x y z) -> GL.vertex $ GL.Vertex3 x y z) points
         loop rest
